@@ -1,9 +1,7 @@
-document.addEventListener('DOMContentLoaded', function() {
-    const fileInput = document.getElementById('files');
-    const dropArea = document.getElementById('drop-area');
-    const errorMessage = document.getElementById('error-message');
+const fileInput = document.getElementById('files');
+        const dropArea = document.getElementById('drop-area');
+        const errorMessage = document.getElementById('error-message');
 
-    if (fileInput && dropArea && errorMessage) {
         dropArea.addEventListener('click', () => {
             fileInput.click();
         });
@@ -54,49 +52,13 @@ document.addEventListener('DOMContentLoaded', function() {
         function updateFileList(files) {
             const fileNames = Array.from(files).map(file => file.name).join(', ');
             const message = document.querySelector('.file-drop-message');
-            if (message) {
-                message.textContent = `Selected files: ${fileNames}`;
-            }
+            message.textContent = `Selected files: ${fileNames}`;
         }
 
         function showError(message) {
-            if (errorMessage) {
-                errorMessage.textContent = message;
-            }
+            errorMessage.textContent = message;
         }
 
         function clearError() {
-            if (errorMessage) {
-                errorMessage.textContent = '';
-            }
+            errorMessage.textContent = '';
         }
-    } else {
-        console.error('Required DOM elements are missing. Ensure that "files", "drop-area", and "error-message" elements exist in the HTML.');
-    }
-});
-
-
-
-async function uploadFiles(files) {
-    const formData = new FormData();
-    for (let file of files) {
-        formData.append('files[]', file);
-    }
-
-    try {
-        const response = await fetch('https://processquote.onrender.com/process', {
-            method: 'POST',
-            body: formData
-        });
-
-        if (response.ok) {
-            const data = await response.json(); // Ensure data is defined before using
-            console.log('Upload successful', data);
-        } else {
-            showError('Failed to upload files. Server returned an error.');
-        }
-    } catch (error) {
-        console.error('Upload error:', error);
-        showError('An error occurred during the upload.');
-    }
-}
