@@ -1,0 +1,11 @@
+{% extends 'layouts/base.html' %}
+
+{% block title %}Upload Files{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>Processing Completed</h1>
+    <p>{{ message }}</p>
+    <p>Consolidated file created: <a href="{{ consolidated_file_path }}">Download here</a>.</p>
+</div>
+{% endblock %}
