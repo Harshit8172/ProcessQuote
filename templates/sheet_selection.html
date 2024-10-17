@@ -91,95 +91,102 @@
     }
 
     function submitForm(event) {
-    event.preventDefault();  // Prevent default form submission
+        event.preventDefault();
+        const formData = new FormData(document.getElementById('sheetForm'));
+        const progressDiv = document.getElementById('progress');
+        const currentProcessingDiv = document.createElement('div');
+        const processedFilesDiv = document.createElement('div');
+        
+        progressDiv.innerHTML = `
+        <p id="progress-message">Processing Start...</p>
+        `;
+        progressDiv.appendChild(currentProcessingDiv);  // For currently processing file
+        progressDiv.appendChild(processedFilesDiv);    // For processed files
 
-    const formData = new FormData(document.getElementById('sheetForm')); // Create FormData from the form
-    const progressDiv = document.getElementById('progress');
-    const currentProcessingDiv = document.createElement('div');
-    const processedFilesDiv = document.createElement('div');
-    
-    // Show progress message
-    progressDiv.innerHTML = `<p id="progress-message">Processing Start...</p>`;
-    progressDiv.appendChild(currentProcessingDiv);  // For currently processing file
-    progressDiv.appendChild(processedFilesDiv);    // For processed files
+        fetch('/process', {
+            method: 'POST',
+            body: formData
+        }).then(response => {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '';
 
-    // File upload logic
-    fetch('/process', {
-        method: 'POST',
-        body: formData  // Send form data (including files and sheets)
-    }).then(response => {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let buffer = '';
+            function read() {
+                return reader.read().then(({ done, value }) => {
+                    if (done) {
+                        document.getElementById('progress-message').textContent = 'Processing Finished...!';
+                        
+                        const lastBatchFile = data.file.startsWith('consolidated_batch_') ? data.file : 'consolidated_data.xlsx';
+                        progressDiv.innerHTML += `
+                            <div class="mt-4">
+                                <a href="/uploads/${lastBatchFile}.xlsx" class="btn btn-success">Download Consolidated Data</a>
+                            </div>
+                        `;
+                        return;
+                    }
 
-        function read() {
-            return reader.read().then(({ done, value }) => {
-                if (done) {
-                    document.getElementById('progress-message').textContent = 'Processing Finished...!';
+                    buffer += decoder.decode(value, { stream: true });
 
-                    const lastBatchFile = data.file.startsWith('consolidated_batch_') ? data.file : 'consolidated_data.xlsx';
-                    progressDiv.innerHTML += `
-                        <div class="mt-4">
-                            <a href="/uploads/${lastBatchFile}.xlsx" class="btn btn-success">Download Consolidated Data</a>
-                        </div>
-                    `;
-                    return;
-                }
+                    let separatorIndex;
+                    while ((separatorIndex = buffer.indexOf('\n\n')) >= 0) {
+                        const chunk = buffer.slice(0, separatorIndex);
+                        buffer = buffer.slice(separatorIndex + 2);
 
-                buffer += decoder.decode(value, { stream: true });
-
-                let separatorIndex;
-                while ((separatorIndex = buffer.indexOf('\n\n')) >= 0) {
-                    const chunk = buffer.slice(0, separatorIndex);
-                    buffer = buffer.slice(separatorIndex + 2);
-
-                    if (chunk.trim()) {
-                        try {
-                            const data = JSON.parse(chunk);
-                            if (data.status === 'processing') {
-                                currentProcessingDiv.innerHTML = `
-                                    <div class="d-flex align-items-center mb-2">
-                                        <div class="spinner-border text-primary" role="status">
-                                            <span class="visually-hidden">Loading...</span>
+                        if (chunk.trim()) {
+                            try {
+                                const data = JSON.parse(chunk);
+                                if (data.status === 'processing') {
+                                    currentProcessingDiv.innerHTML = `
+                                        <div class="d-flex align-items-center mb-2">
+                                            <div class="spinner-border text-primary" role="status">
+                                                <span class="visually-hidden">Loading...</span>
+                                            </div>
+                                            <p class="ps-3 mb-0">Processing ${data.file} - Sheet: ${data.sheet}</p>
                                         </div>
-                                        <p class="ps-3 mb-0">Processing ${data.file} - Sheet: ${data.sheet}</p>
-                                    </div>
-                                `;
-                            } else if (data.status === 'done') {
-                                processedFilesDiv.innerHTML += `
-                                    <div class="d-flex align-items-center mb-2">
-                                        <img src="static/assets/img/checkmark.png" alt="Processed" class="me-2">
-                                        <p class="ps-3 mb-0">Processed ${data.file} - Sheet: ${data.sheet}</p>
-                                    </div>
-                                `;
-                                currentProcessingDiv.innerHTML = '';  // Clear the "currently processing" div
-                            } else if (data.status === 'error' && data.error.includes('sheet is empty')) {
-                                processedFilesDiv.innerHTML += `
-                                    <div class="d-flex align-items-center mb-2">
-                                        <img src="static/assets/img/checkmark.png" alt="Processed" class="me-2">
-                                        <p class="ps-3 mb-0">${data.file} - Sheet: ${data.sheet}: ${data.error}</p>
-                                    </div>
-                                `;
-                                currentProcessingDiv.innerHTML = '';  // Clear the "currently processing" div
-                            } else if (data.status === 'error') {
-                                processedFilesDiv.innerHTML += `<p>Error processing ${data.file} - Sheet: ${data.sheet}: ${data.error}</p>`;
-                                currentProcessingDiv.innerHTML = '';  // Clear the "currently processing" div
+                                    `;
+                                } else if (data.status === 'done') {
+                                    if (data.file.startsWith('consolidated_batch_')) {
+                                        processedFilesDiv.innerHTML += `
+                                            <div class="d-flex align-items-center mb-2">
+                                                <img src="static/assets/img/checkmark.png" alt="Processed" class="me-2">
+                                                <p class="ps-3 mb-0">Processed ${data.file}</p>
+                                            </div>
+                                        `;
+                                    } else {
+                                        processedFilesDiv.innerHTML += `
+                                            <div class="d-flex align-items-center mb-2">
+                                                <img src="static/assets/img/checkmark.png" alt="Processed" class="me-2">
+                                                <p class="ps-3 mb-0">Processed ${data.file} - Sheet: ${data.sheet}</p>
+                                            </div>
+                                        `;
+                                    }
+                                    currentProcessingDiv.innerHTML = '';  // Clear the "currently processing" div
+                                } else if (data.status === 'error' && data.error.includes('sheet is empty')) {
+                                    processedFilesDiv.innerHTML += `
+                                        <div class="d-flex align-items-center mb-2">
+                                            <img src="static/assets/img/checkmark.png" alt="Processed" class="me-2">
+                                            <p class="ps-3 mb-0">${data.file} - Sheet: ${data.sheet}: ${data.error}</p>
+                                        </div>
+                                    `;
+                                    currentProcessingDiv.innerHTML = '';  // Clear the "currently processing" div
+                                } else if (data.status === 'error') {
+                                    processedFilesDiv.innerHTML += `<p>Error processing ${data.file} - Sheet: ${data.sheet}: ${data.error}</p>`;
+                                    currentProcessingDiv.innerHTML = '';  // Clear the "currently processing" div
+                                }
+                            } catch (error) {
+                                console.error('Error parsing JSON:', error);
                             }
-                        } catch (error) {
-                            console.error('Error parsing JSON:', error);
                         }
                     }
-                }
 
-                return read();
-            });
-        }
+                    return read();
+                });
+            }
 
-        read();
-    }).catch(error => {
-        progressDiv.innerHTML += `<p>Error: ${error.message}</p>`;
-    });
-}
-
+            read();
+        }).catch(error => {
+            progressDiv.innerHTML += `<p>Error: ${error.message}</p>`;
+        });
+    }
 </script>
 {% endblock %}
