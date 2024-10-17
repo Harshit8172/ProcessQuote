@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: my-flask-app
+    name: ProcessQuote
     env: python
     region: oregon  # Adjust this based on your region
     plan: free  # Choose the plan you want
