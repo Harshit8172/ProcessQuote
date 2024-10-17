@@ -72,52 +72,57 @@ def process_sheets():
 
     @stream_with_context
     def generate():
-        consolidated_data = []
-        conn = get_db_connection()
-        batch_size = 10  
-        batch_count = 0  
-        for file_batch in batch(selected_sheets.items(), batch_size):
-            batch_count += 1  
-            for file, sheets in file_batch:
-                file = file.split('[')[0]
-                filepath = os.path.join(app.config['UPLOAD_FOLDER'], file)
+        try:
+            consolidated_data = []
+            conn = get_db_connection()
+            batch_size = 10  
+            batch_count = 0  
 
-                if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
-                    yield json.dumps({'status': 'error', 'file': file, 'error': 'File is empty or missing'}).encode('utf-8') + b'\n\n'
-                    continue
+            for file_batch in batch(selected_sheets.items(), batch_size):
+                batch_count += 1  
+                for file, sheets in file_batch:
+                    file = file.split('[')[0]
+                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], file)
 
-                for sheet in sheets:
+                    if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
+                        yield json.dumps({'status': 'error', 'file': file, 'error': 'File is empty or missing'}).encode('utf-8') + b'\n\n'
+                        continue
+
+                    for sheet in sheets:
+                        try:
+                            yield json.dumps({'status': 'processing', 'file': file, 'sheet': sheet}).encode('utf-8') + b'\n\n'
+
+                            df = process_excel(filepath, sheet)
+                            if df is None or df.empty or len(df) == 1:
+                                yield json.dumps({'status': 'error', 'file': file, 'sheet': sheet, 'error': f'{file} sheet is empty'}).encode('utf-8') + b'\n\n'
+                                continue
+
+                            consolidated_data.append(df)
+
+                            yield json.dumps({'status': 'done', 'file': file, 'sheet': sheet}).encode('utf-8') + b'\n\n'
+
+                        except Exception as e:
+                            yield json.dumps({'status': 'error', 'file': file, 'sheet': sheet, 'error': str(e)}).encode('utf-8') + b'\n\n'
+
+                if consolidated_data:
                     try:
-                        yield json.dumps({'status': 'processing', 'file': file, 'sheet': sheet}).encode('utf-8') + b'\n\n'
+                        final_df = pd.concat(consolidated_data, ignore_index=True)
+                        final_df = final_df.astype(str)
+                        insert_data_to_sql(final_df, conn)
 
-                        df = process_excel(filepath, sheet)
-                        if df is None or df.empty or len(df) == 1:
-                            yield json.dumps({'status': 'error', 'file': file, 'sheet': sheet, 'error': f'{file} sheet is empty'}).encode('utf-8') + b'\n\n'
-                            continue
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        consolidated_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f'consolidated_batch_{batch_count}_{timestamp}.xlsx')
+                        final_df.to_excel(consolidated_file_path, index=False)
 
-                        consolidated_data.append(df)
-
-                        yield json.dumps({'status': 'done', 'file': file, 'sheet': sheet}).encode('utf-8') + b'\n\n'
+                        yield json.dumps({'status': 'done', 'file': f'consolidated_batch_{batch_count}', 'message': 'Batch data has been inserted into the database.'}).encode('utf-8') + b'\n\n'
 
                     except Exception as e:
-                        yield json.dumps({'status': 'error', 'file': file, 'sheet': sheet, 'error': str(e)}).encode('utf-8') + b'\n\n'
+                        yield json.dumps({'status': 'error', 'file': 'N/A', 'sheet': 'N/A', 'error': 'Database error: ' + str(e)}).encode('utf-8') + b'\n\n'
 
-            if consolidated_data:
-                try:
-                    final_df = pd.concat(consolidated_data, ignore_index=True)
-                    final_df = final_df.astype(str)
-                    insert_data_to_sql(final_df, conn)
+            conn.close()
 
-                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    consolidated_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f'consolidated_batch_{batch_count}_{timestamp}.xlsx')
-                    final_df.to_excel(consolidated_file_path, index=False)
-
-                    yield json.dumps({'status': 'done', 'file': f'consolidated_batch_{batch_count}', 'message': 'Batch data has been inserted into the database.'}).encode('utf-8') + b'\n\n'
-
-                except Exception as e:
-                    yield json.dumps({'status': 'error', 'file': 'N/A', 'sheet': 'N/A', 'error': 'Database error: ' + str(e)}).encode('utf-8') + b'\n\n'
-
-        conn.close()
+        except Exception as global_e:
+            yield json.dumps({'status': 'error', 'message': 'An error occurred: ' + str(global_e)}).encode('utf-8') + b'\n\n'
 
     return Response(generate(), mimetype='application/json')
 
